@@ -116,7 +116,7 @@ async def robot_tool_2_lead_grabber():
         
         try:
             discovered_emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', text_content)
-            lead_contact = discovered_emails[0] if discovered_emails else "management@target-system-domain.net"
+            lead_contact = discovered_emails if discovered_emails else "management@target-system-domain.net"
             
             logger.info(f"👤 ROBOT 2: Extracted secure target account lead for Gap #{gap_id}: {lead_contact}")
             
