@@ -10,4 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY appliance_core.py .
 
+EXPOSE 10000
+
 CMD ["python", "-u", "appliance_core.py"]
