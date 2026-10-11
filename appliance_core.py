@@ -7,8 +7,10 @@ import logging
 import requests
 import random
 import re
+import threading
 import nest_asyncio
 from bs4 import BeautifulSoup
+from flask import Flask
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
@@ -16,7 +18,7 @@ from telegram.constants import ParseMode
 nest_asyncio.apply()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("GlobalUSDConcatenatedEngine")
+logger = logging.getLogger("GlobalNairaConcatenatedEngine")
 
 # --- LIVE REPO ENVIRONMENT AUTHENTICATION ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -64,10 +66,8 @@ def refresh_proxy_pool():
 # 🤖 ROBOT TOOL 1: THE INFINITE HUNTER (Proxy-Rotated Scraper)
 # =====================================================================
 async def robot_tool_1_hunter_loop():
-    """ROBOT 1: Combs the global internet space 24/7 through a rotating proxy mask to spot raw layout discrepancies."""
     global PROXY_POOL
     logger.info("📡 ROBOT 1 [HUNTER]: Active and combing global spaces...")
-    
     target_market_pools = ["https://ycombinator.com", "https://httpbin.org"]
     proxy_cycle = 0
 
@@ -107,7 +107,6 @@ async def robot_tool_1_hunter_loop():
 # 🤖 ROBOT TOOL 2: THE HIGH-SPEED LEAD GRABBER
 # =====================================================================
 async def robot_tool_2_lead_grabber():
-    """ROBOT 2: Takes the raw page text from Robot 1 and strips out direct operational contacts using regex arrays."""
     logger.info("⚙️ ROBOT 2 [LEAD GRABBER]: Pipeline worker listening...")
     while True:
         data = await pipeline_queue_1_to_2.get()
@@ -136,7 +135,6 @@ async def robot_tool_2_lead_grabber():
 # 🤖 ROBOT TOOL 3: NANOSECOND VALUE-PROOF COMPILER
 # =====================================================================
 async def robot_tool_3_proof_compiler():
-    """ROBOT 3: Builds a localized, watermarked cryptographic digest of the error in nanoseconds to prove authenticity."""
     logger.info("🔒 ROBOT 3 [PROOF COMPILER]: Online and ready.")
     while True:
         data = await pipeline_queue_2_to_3.get()
@@ -167,7 +165,6 @@ async def robot_tool_3_proof_compiler():
 # 🤖 ROBOT TOOL 4: AUTONOMOUS RESOLUTION SOLVER
 # =====================================================================
 async def robot_tool_4_resolution_solver():
-    """ROBOT 4: Computes the actual, functional system resolution configuration code and packages it into required extensions."""
     logger.info("🧠 ROBOT 4 [RESOLUTION SOLVER]: Neural computation loop active.")
     while True:
         data = await pipeline_queue_3_to_4.get()
@@ -177,11 +174,11 @@ async def robot_tool_4_resolution_solver():
         try:
             if "SECURITY" in text_content.upper() or "API" in text_content.upper() or random.random() > 0.5:
                 tier_classification = "HIGH_VALUE_ENTERPRISE_GAP"
-                fee_cents = 7500  # $75.00 USD global currency value represented in the lowest subunit cents
+                fee_kobo = 7500000  # ₦75,000.00 represented in kobo
                 prescribed_extension = ".json"
             else:
                 tier_classification = "GROWTH_MARKET_NICHE"
-                fee_cents = 2500  # $25.00 USD represented in cents
+                fee_kobo = 2500000  # ₦25,000.00 represented in kobo
                 prescribed_extension = ".txt"
 
             compiled_resolution_package = {
@@ -205,7 +202,7 @@ async def robot_tool_4_resolution_solver():
             
             await pipeline_queue_4_to_5.put({
                 "gap_id": gap_id,
-                "fee": fee_cents,
+                "fee": fee_kobo,
                 "package_path": packaged_file_path,
                 "tier": tier_classification,
                 "lead_contact": data["lead_contact"],
@@ -221,3 +218,17 @@ async def robot_tool_4_resolution_solver():
 # 🤖 ROBOT TOOL 5: GLOBAL PAYWALL OUTREACH DISTRIBUTOR
 # =====================================================================
 async def robot_tool_5_paywall_outreach_distributor():
+    logger.info("💳 ROBOT 5 [PAYWALL DISTRIBUTOR]: Financial Clearing Gateway active.")
+    paystack_init_url = "https://paystack.co"
+    headers = {"Authorization": f"Bearer {PAYSTACK_SECRET}", "Content-Type": "application/json"}
+
+    while True:
+        item = await pipeline_queue_4_to_5.get()
+        gap_id = item["gap_id"]
+        fee_kobo = item["fee"]
+        file_path = item["package_path"]
+        tier = item["tier"]
+        lead = item["lead_contact"]
+        proof = item["proof_snippet"]
+
+        payload = {
