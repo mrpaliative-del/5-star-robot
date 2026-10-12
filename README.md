@@ -47,3 +47,22 @@ After deploying, open `https://five-star-robot.onrender.com/api/reports/preview`
 - Source refresh can only mark records stale based on the items returned by that source's successful query; pagination and source query limits can mean records are not returned in a given scan.
 - Payment callback/webhook behavior must be tested in Paystack test mode before live mode.
 - The report endpoint returns JSON. A user-facing report page, support workflow, rate limiting, and full automated test suite are not included in this package.
+
+
+## v2.3.0 Funding Quality and Nigerian Eligibility Triage
+
+This release keeps the existing API paths, Paystack flow, paid report access, and preview route. It adds transparent applicant-type and geographic triage labels to opportunity records and the public preview. The engine is intended for both individuals and businesses, and for Nigeria plus international opportunities.
+
+**Important limitation:** these tags are heuristic indicators based on record text and country metadata. They do not verify eligibility. A US-source record remains explicitly unverified for Nigerian applicants unless an authoritative notice has been reviewed. World Bank GDP records remain economic context only and are never funding offers.
+
+### Existing environment variables
+No new environment variables are required. Keep existing Render values unchanged. In particular, retain `PAYSTACK_SECRET`, `PUBLIC_BASE_URL`, `REPORT_PRICE_NAIRA`, `ADMIN_API_SECRET` (if pipeline administration is used), and configure `DATA_DIR` to a persistent mounted disk path if SQLite data must survive redeploys/restarts. Never put secret values in source control.
+
+### Smoke tests after deploy
+- `GET /` — confirms version and existing endpoint list.
+- `GET /health` — checks application/database status.
+- `GET /api/reports/latest` — metadata only.
+- `GET /api/reports/preview` — up to three preview records including triage labels.
+- Test payment initialization only with a controlled test plan; do not make a real charge merely to test deployment.
+
+Current connectors are still Grants.gov and World Bank economic context. This release does **not** claim that new Nigerian grant feeds have been integrated; a later source-integration stage should add and test authoritative Nigerian and international funding feeds without inventing listings.

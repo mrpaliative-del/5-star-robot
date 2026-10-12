@@ -7,7 +7,7 @@ import requests
 from flask import Flask, jsonify, request, redirect, abort
 
 APP_NAME = "GlobalNaira Engine"
-APP_VERSION = "2.2.0-funding-quality"
+APP_VERSION = "2.3.0-nigerian-eligibility"
 PORT = int(os.getenv("PORT", "10000"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/globalnaira"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -199,11 +199,45 @@ def discover_world_bank():
         log.warning("World Bank discovery failed: %s", type(e).__name__)
         return [], {"ok": False, "error": type(e).__name__}
 
+def classify_applicant_and_geography(item):
+    """Heuristic tags only; never treat text matching as verified eligibility."""
+    text_value = (safe_text(item.get("title"), 500) + " " +
+                  safe_text(item.get("description"), 5000) + " " +
+                  safe_text(item.get("eligibility"), 1000)).lower()
+    if item.get("category") == "economic_context":
+        return ["not_applicable"], "context_only"
+
+    individual_terms = ("student", "individual", "researcher", "early career", "fellowship", "scholarship")
+    business_terms = ("small business", "startup", "start-up", "sme", "company", "enterprise", "for-profit", "entrepreneur")
+    has_individual = any(t in text_value for t in individual_terms)
+    has_business = any(t in text_value for t in business_terms)
+    if has_individual and has_business:
+        applicant_types = ["individual", "business"]
+    elif has_individual:
+        applicant_types = ["individual"]
+    elif has_business:
+        applicant_types = ["business"]
+    else:
+        applicant_types = ["unknown"]
+
+    country = safe_text(item.get("country"), 200).lower()
+    if country in {"nigeria", "nigerian"}:
+        geography = "nigeria_only_or_nigeria_based"
+    elif country in {"united states", "usa", "us"}:
+        geography = "united_states_source_non_us_eligibility_unverified"
+    elif any(t in text_value for t in ("international applicants", "all countries", "worldwide", "global applicants")):
+        geography = "international_claim_unverified"
+    else:
+        geography = "geographic_scope_unverified"
+    return applicant_types, geography
+
+
 def normalize_item(item):
     title = safe_text(item.get("title"), 500)
     url = safe_text(item.get("url"), 2500)
     if not title or not valid_http_url(url):
         return None
+    applicant_types, geographic_scope = classify_applicant_and_geography(item)
     return {
         "title": title,
         "description": safe_text(item.get("description"), 5000),
@@ -216,6 +250,9 @@ def normalize_item(item):
         "country": safe_text(item.get("country") or "Not identified", 200),
         "eligibility": safe_text(item.get("eligibility") or "Eligibility not verified", 1000),
         "eligibility_status": eligibility_state(item),
+        "applicant_types": applicant_types,
+        "geographic_scope": geographic_scope,
+        "funding_quality_status": "context_only" if item.get("category") == "economic_context" else "requires_official_verification",
         "raw": item.get("raw", {}) if isinstance(item.get("raw", {}), (dict, list)) else {},
     }
 
@@ -344,13 +381,16 @@ def run_pipeline():
                     "sources": {name: meta for name, (_, meta) in source_results.items()},
                     "failed_sources": failed_sources,
                 },
-                "grant_opportunities": [{k:x.get(k) for k in ["title","description","url","source","category","score","status_label","deadline","country","eligibility","eligibility_status","last_seen_at"]} | {"score_reasons": json.loads(x.get("score_reasons") or "[]")} for x in grants_only[:50]],
+                "grant_opportunities": [{k:x.get(k) for k in ["title","description","url","source","category","score","status_label","deadline","country","eligibility","eligibility_status","last_seen_at"]} | {"score_reasons": json.loads(x.get("score_reasons") or "[]"), "applicant_types": classify_applicant_and_geography(x)[0], "geographic_scope": classify_applicant_and_geography(x)[1], "funding_quality_status": "requires_official_verification"} for x in grants_only[:50]],
                 "economic_context": [{k:x.get(k) for k in ["title","description","url","source","category","score","status_label","country"]} for x in context_only[:20]],
                 "scoring_note": "Scores are heuristic relevance rankings, not probabilities of approval, eligibility, or payment.",
                 "limitations": [
                     "A posted status does not establish that applications remain open or that you qualify.",
                     "Eligibility is unverified unless the official notice has been reviewed and explicitly confirms it.",
                     "Grants.gov is a US federal source; non-US applicant eligibility may be restricted.",
+                    "Applicant-type and geographic tags are heuristic triage labels, not verified eligibility decisions.",
+                    "This version prioritizes both individuals and businesses, and Nigeria plus international opportunities; the current live discovery connectors still determine which records are actually found.",
+                    "No opportunity is marked eligible for a Nigerian applicant unless a future authoritative review explicitly verifies it.",
                     "World Bank economic indicators are context only, not grants or funding offers.",
                     "A record missing from a successful source refresh is marked stale; a failed source is not used to stale its records.",
                     "Always verify the official notice, deadline, eligibility, terms, and authenticity before applying."
@@ -456,7 +496,7 @@ def health():
         with db_conn() as c: c.execute("SELECT 1").fetchone()
         db_status = "ok"
     except Exception: db_status = "error"
-    return jsonify({"status":"ok" if db_status == "ok" else "degraded", "database":db_status,"version":APP_VERSION,"discovery_sources":["Grants.gov","World Bank (economic context only)"],"paystack_configured":bool(PAYSTACK_SECRET),"telegram_configured":bool(TELEGRAM_TOKEN and ADMIN_CHAT_ID),"last_pipeline_status":state_get("last_pipeline_status","not_run"),"last_pipeline_at":state_get("last_pipeline_at"),"last_pipeline_count":state_get("last_pipeline_count"),"last_pipeline_seconds":state_get("last_pipeline_seconds"),"last_pipeline_sources_failed":json.loads(state_get("last_pipeline_sources_failed","{}"))}, 200 if db_status == "ok" else 503)
+    return jsonify({"status":"ok" if db_status == "ok" else "degraded", "database":db_status,"version":APP_VERSION,"discovery_sources":["Grants.gov (US federal opportunities)","World Bank (economic context only; not funding)"],"paystack_configured":bool(PAYSTACK_SECRET),"telegram_configured":bool(TELEGRAM_TOKEN and ADMIN_CHAT_ID),"last_pipeline_status":state_get("last_pipeline_status","not_run"),"last_pipeline_at":state_get("last_pipeline_at"),"last_pipeline_count":state_get("last_pipeline_count"),"last_pipeline_seconds":state_get("last_pipeline_seconds"),"last_pipeline_sources_failed":json.loads(state_get("last_pipeline_sources_failed","{}"))}, 200 if db_status == "ok" else 503)
 
 @app.post("/api/pipeline/run")
 def pipeline_run_route():
@@ -493,7 +533,10 @@ def report_preview():
             "deadline": item.get("deadline"),
             "country": item.get("country"),
             "eligibility": item.get("eligibility"),
-            "eligibility_status": item.get("eligibility_status", "unverified")
+            "eligibility_status": item.get("eligibility_status", "unverified"),
+            "applicant_types": item.get("applicant_types", ["unknown"]),
+            "geographic_scope": item.get("geographic_scope", "geographic_scope_unverified"),
+            "funding_quality_status": item.get("funding_quality_status", "requires_official_verification")
         })
 
     return jsonify({
@@ -506,8 +549,9 @@ def report_preview():
         "grant_opportunities": preview,
         "notice": (
             "Preview only. Verify the official notice, deadline and applicant "
-            "eligibility before applying. Grants.gov is a US federal source; "
-            "Nigerian applicant eligibility is not guaranteed."
+            "eligibility before applying. Applicant-type and geographic tags are "
+            "heuristic triage only. Grants.gov is a US federal source; Nigerian "
+            "applicant eligibility is not guaranteed."
         )
     }), 200
 
