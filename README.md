@@ -1,17 +1,22 @@
-# GlobalNaira Engine — strengthened deployment package
+# GlobalNaira Engine — funding-quality update
 
-Version: `2.1.0-migration-payment-hardening`
+Version: `2.2.0-funding-quality`
 
 ## Included
 - Flask app served by Gunicorn on port 10000.
-- Grants.gov opportunity discovery and World Bank GDP context kept in separate report sections.
-- Heuristic relevance scoring with visible status and eligibility cautions.
-- SQLite persistence and deduplication.
+- Grants.gov opportunity discovery and World Bank GDP context in separate report sections.
+- Conservative status labels: posted but eligibility unverified, forecasted, expired, closed, stale, or unverified.
+- Separate applicant eligibility status; keywords never establish eligibility.
+- Transparent heuristic scoring reasons; scores are not probabilities of award or payment.
+- Additive SQLite migrations for last-seen timestamps, eligibility status, and score explanations. Existing database records and order/payment tables are preserved.
+- Source-aware stale handling: records are marked stale only when their own source refresh succeeds and they are absent from that successful response.
+- Pipeline reports `success`, `partial_success`, or `error`; a failed source is not treated as an empty successful scan.
+- Separate full database totals from the records included in the report sample.
 - Paystack initialization, server-side transaction verification, signed webhook validation, atomic/idempotent paid-state updates, token-gated report delivery, and amount/currency/reference checks.
 - Health and admin pipeline endpoints; optional Telegram notifications.
 
 ## Deploy
-Replace the corresponding files in the existing repository with these package files, commit, and deploy through Render. This package has not been deployed to your Render service by this archive creation.
+Replace the corresponding files in the existing repository with these package files, commit, and deploy through Render. This archive does not update GitHub or Render automatically. Validate first with Paystack test mode and the deployment health endpoint.
 
 ## Environment variables
 - `PUBLIC_BASE_URL`: `https://five-star-robot.onrender.com` (must be HTTPS for checkout callbacks).
@@ -23,15 +28,18 @@ Replace the corresponding files in the existing repository with these package fi
 - `MAX_ITEMS_PER_SOURCE`: `15` by default; clamped to 5–50.
 - `DISCOVERY_QUERY`: search keywords for Grants.gov.
 - `DISABLE_BACKGROUND_PIPELINE`: `false` or unset to enable background scanning; `true` to disable it.
-- `ADMIN_API_SECRET`: long, unique random secret used in `x-admin-secret` header for `POST /api/pipeline/run`.
+- `ADMIN_API_SECRET`: long, unique random secret used in the `x-admin-secret` header for `POST /api/pipeline/run`.
 - `TELEGRAM_TOKEN`: optional Telegram bot token.
 - `ADMIN_CHAT_ID`: optional destination chat ID.
 - `LOG_LEVEL`: `INFO` by default.
 
+No new environment variables are required for this update. Keep existing values unless your Render configuration differs from the instructions above.
+
 ## Important limitations
-- Current funding discovery uses Grants.gov, a US federal source. Eligibility for Nigerian applicants is not assumed.
+- Funding discovery currently uses Grants.gov, a US federal source. Eligibility for Nigerian applicants is not assumed or guaranteed.
 - World Bank GDP records are economic context, not grants or procurement opportunities.
-- Ranking scores are heuristics, not probabilities of award. Official notices must be checked before applying.
-- Payment webhook/callback behavior must be tested in Paystack test mode before live mode.
-- The report endpoint returns JSON. A production user-facing report page, support workflow, rate limiting, and full automated test suite are not included in this package.
-- This archive does not update GitHub or Render automatically.
+- Ranking scores are heuristic relevance rankings, not probabilities of award. Official notices must be checked before applying.
+- “Posted” means the source reported a posted status; it does not establish that a deadline is still valid or that an applicant qualifies.
+- Source refresh can only mark records stale based on the items returned by that source's successful query; pagination and source query limits can mean records are not returned in a given scan.
+- Payment callback/webhook behavior must be tested in Paystack test mode before live mode.
+- The report endpoint returns JSON. A user-facing report page, support workflow, rate limiting, and full automated test suite are not included in this package.
