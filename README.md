@@ -13,6 +13,7 @@ Version: `2.2.0-funding-quality`
 - Pipeline reports `success`, `partial_success`, or `error`; a failed source is not treated as an empty successful scan.
 - Separate full database totals from the records included in the report sample.
 - Paystack initialization, server-side transaction verification, signed webhook validation, atomic/idempotent paid-state updates, token-gated report delivery, and amount/currency/reference checks.
+- Public limited preview endpoint (`GET /api/reports/preview`) showing up to three grant records without returning the full paid report.
 - Health and admin pipeline endpoints; optional Telegram notifications.
 
 ## Deploy
@@ -34,6 +35,9 @@ Replace the corresponding files in the existing repository with these package fi
 - `LOG_LEVEL`: `INFO` by default.
 
 No new environment variables are required for this update. Keep existing values unless your Render configuration differs from the instructions above.
+
+## Preview endpoint validation
+After deploying, open `https://five-star-robot.onrender.com/api/reports/preview`. It should return HTTP 200 and a JSON preview containing at most three grant records when a report is ready. The endpoint does not prove that opportunities are open or that Nigerian applicants qualify; verify each official notice. If no report is ready, it returns HTTP 503. This package has not been deployed to GitHub or Render automatically.
 
 ## Important limitations
 - Funding discovery currently uses Grants.gov, a US federal source. Eligibility for Nigerian applicants is not assumed or guaranteed.

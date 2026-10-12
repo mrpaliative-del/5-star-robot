@@ -448,7 +448,7 @@ def latest_report():
 
 @app.get("/")
 def index():
-    return jsonify({"name":APP_NAME,"version":APP_VERSION,"status":"ok","endpoints":{"health":"/health","latest_report_metadata":"/api/reports/latest","initialize_payment":"POST /api/payments/initialize","callback":"/paystack/callback","webhook":"POST /paystack/webhook","paid_report":"/report/<access_token>"}})
+    return jsonify({"name":APP_NAME,"version":APP_VERSION,"status":"ok","endpoints":{"health":"/health","latest_report_metadata":"/api/reports/latest","public_preview":"/api/reports/preview","initialize_payment":"POST /api/payments/initialize","callback":"/paystack/callback","webhook":"POST /paystack/webhook","paid_report":"/report/<access_token>"}})
 
 @app.get("/health")
 def health():
@@ -471,6 +471,46 @@ def report_metadata():
     if not row: return jsonify({"status":"not_ready","message":"No report has been generated yet."}), 503
     report = json.loads(row["report_json"])
     return jsonify({"report_id":row["id"],"created_at":row["created_at"],"status":row["status"],"version":APP_VERSION,"summary":report.get("summary",{}),"price_naira":REPORT_PRICE_NAIRA,"payment_required_for_full_report":True})
+
+@app.get("/api/reports/preview")
+def report_preview():
+    """Return a limited public preview without exposing the full paid report."""
+    report_id, report = latest_report()
+    if not report_id or not report:
+        return jsonify({
+            "status": "not_ready",
+            "message": "No report is available yet."
+        }), 503
+
+    grants = report.get("grant_opportunities", [])
+    preview = []
+    for item in grants[:3]:
+        preview.append({
+            "title": item.get("title"),
+            "source": item.get("source"),
+            "url": item.get("url"),
+            "status": item.get("status_label"),
+            "deadline": item.get("deadline"),
+            "country": item.get("country"),
+            "eligibility": item.get("eligibility"),
+            "eligibility_status": item.get("eligibility_status", "unverified")
+        })
+
+    return jsonify({
+        "name": APP_NAME,
+        "version": APP_VERSION,
+        "status": "preview",
+        "report_id": report_id,
+        "price_naira": REPORT_PRICE_NAIRA,
+        "preview_limit": 3,
+        "grant_opportunities": preview,
+        "notice": (
+            "Preview only. Verify the official notice, deadline and applicant "
+            "eligibility before applying. Grants.gov is a US federal source; "
+            "Nigerian applicant eligibility is not guaranteed."
+        )
+    }), 200
+
 
 @app.post("/api/payments/initialize")
 def initialize_payment():
