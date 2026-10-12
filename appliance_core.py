@@ -2,12 +2,12 @@ import os, re, json, time, uuid, hmac, hashlib, logging, secrets, sqlite3, threa
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, timezone, date
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 import requests
 from flask import Flask, jsonify, request, redirect, abort
 
 APP_NAME = "GlobalNaira Engine"
-APP_VERSION = "2.0.0-quality-payments"
+APP_VERSION = "2.1.0-migration-payment-hardening"
 PORT = int(os.getenv("PORT", "10000"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/globalnaira"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -73,6 +73,21 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
         ''')
 
+    # Safe additive migration for databases created by older releases.
+    with db_conn() as c:
+        existing = {row["name"] for row in c.execute("PRAGMA table_info(opportunities)").fetchall()}
+        migrations = {
+            "status_label": "TEXT NOT NULL DEFAULT 'status_unverified'",
+            "deadline": "TEXT",
+            "country": "TEXT",
+            "eligibility": "TEXT NOT NULL DEFAULT 'Eligibility not verified'",
+        }
+        for column, declaration in migrations.items():
+            if column not in existing:
+                c.execute(f"ALTER TABLE opportunities ADD COLUMN {column} {declaration}")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
+
+
 def state_set(key, value):
     with db_conn() as c:
         c.execute("INSERT INTO engine_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", (key, str(value), utcnow()))
@@ -122,7 +137,7 @@ def discover_grants_gov():
             close = safe_text(h.get("closeDate") or h.get("close_date"), 40)
             status = safe_text(h.get("oppStatus") or h.get("status") or "unverified", 80)
             agency = safe_text(h.get("agencyName") or h.get("agency") or "Not supplied", 300)
-            detail_url = "https://www.grants.gov/search-results-detail/" + opp_id if opp_id else "https://www.grants.gov/search-grants"
+            detail_url = "https://www.grants.gov/search-results-detail/" + quote(opp_id, safe="") if opp_id else "https://www.grants.gov/search-grants"
             items.append({"title": title, "description": f"Agency: {agency}. Status reported by Grants.gov: {status}. Closing date: {close or 'not supplied'}. Verify all terms on the official record.", "url": detail_url, "source": "Grants.gov", "category": "grant_opportunity", "status": status, "deadline": close, "country": "United States", "eligibility": "US opportunity; eligibility for Nigerian applicants not verified", "raw": h})
         return items, {"ok": True, "count": len(items)}
     except Exception as e:
@@ -239,24 +254,44 @@ def verify_paystack_transaction(reference):
     return payload["data"]
 
 def mark_order_paid(reference, gateway_data):
-    # Atomic conditional update makes repeated webhook/callback deliveries idempotent.
+    # Validate the server-verified gateway payload before accepting any delivery.
+    if not isinstance(gateway_data, dict):
+        return False, "invalid_gateway_payload"
+    if gateway_data.get("status") != "success":
+        return False, "transaction_not_successful"
+    try:
+        amount = int(gateway_data.get("amount", -1))
+    except (ValueError, TypeError):
+        amount = -1
+    if str(gateway_data.get("currency", "")).upper() != "NGN":
+        return False, "currency_mismatch"
+    if str(gateway_data.get("reference", "")) != reference:
+        return False, "reference_mismatch"
+
+    # BEGIN IMMEDIATE serializes writers and makes duplicate deliveries idempotent.
     with db_conn() as c:
         c.execute("BEGIN IMMEDIATE")
         row = c.execute("SELECT * FROM orders WHERE reference=?", (reference,)).fetchone()
         if not row:
-            c.rollback(); return False, "unknown_order"
+            c.rollback()
+            return False, "unknown_order"
+        if amount != int(row["amount_kobo"]):
+            c.rollback()
+            return False, "amount_mismatch"
         if row["status"] == "paid":
-            c.commit(); return True, "already_paid"
-        if gateway_data.get("status") != "success": c.rollback(); return False, "transaction_not_successful"
-        try: amount = int(gateway_data.get("amount", -1))
-        except (ValueError, TypeError): amount = -1
-        if amount != int(row["amount_kobo"]): c.rollback(); return False, "amount_mismatch"
-        if str(gateway_data.get("currency", "")).upper() != "NGN": c.rollback(); return False, "currency_mismatch"
-        if str(gateway_data.get("reference", "")) != reference: c.rollback(); return False, "reference_mismatch"
-        c.execute("UPDATE orders SET status='paid',paid_at=?,gateway_response=? WHERE reference=? AND status='pending'", (utcnow(), json.dumps(gateway_data), reference))
+            c.commit()
+            return True, "already_paid"
+        if row["status"] != "pending":
+            c.rollback()
+            return False, "order_not_payable"
+        c.execute(
+            "UPDATE orders SET status='paid',paid_at=?,gateway_response=? WHERE reference=? AND status='pending'",
+            (utcnow(), json.dumps(gateway_data, ensure_ascii=False), reference),
+        )
         updated = c.execute("SELECT status FROM orders WHERE reference=?", (reference,)).fetchone()
         c.commit()
-        return (updated and updated["status"] == "paid"), ("paid" if updated and updated["status"] == "paid" else "state_conflict")
+        paid = bool(updated and updated["status"] == "paid")
+        return paid, "paid" if paid else "state_conflict"
 
 def latest_report():
     with db_conn() as c: row = c.execute("SELECT id,report_json FROM reports WHERE status='ready' ORDER BY created_at DESC LIMIT 1").fetchone()

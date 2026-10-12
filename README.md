@@ -1,6 +1,6 @@
 # GlobalNaira Engine — strengthened deployment package
 
-Version: `2.0.0-quality-payments`
+Version: `2.1.0-migration-payment-hardening`
 
 ## Included
 - Flask app served by Gunicorn on port 10000.
